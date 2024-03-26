@@ -1,0 +1,102 @@
+# 1. How many customers has Foodie-Fi ever had?
+SELECT COUNT(DISTINCT customer_id) AS No_of_customers
+FROM foodie_fi.subscriptions;
+
+# 2. What is the monthly distribution of trial plan start_date values for our dataset - use the start of the month as the group by value
+SELECT MONTH(s.start_date) as Months,
+COUNT(s.customer_id) as count_cust
+FROM foodie_fi.plans p
+LEFT JOIN foodie_fi.subscriptions s ON p.plan_id = s.plan_id
+WHERE p.plan_name = 'trial'
+GROUP BY month(s.start_date), year(s.start_date)
+ORDER BY month(s.start_date), year(s.start_date);
+
+# 3. What plan start_date values occur after the year 2020 for our dataset? Show the breakdown by count of events for each plan_name
+SELECT p.plan_id,
+p.plan_name,
+count(P.plan_id)
+FROM foodie_fi.plans p
+LEFT JOIN foodie_fi.subscriptions s on p.plan_id = s.plan_id
+WHERE YEAR(s.start_date)>2020
+GROUP BY p.plan_id,
+p.plan_name
+ORDER BY p.plan_id;
+
+# 4. What is the customer count and percentage of customers who have churned rounded to 1 decimal place?
+SELECT sum(CASE WHEN p.plan_name = 'churn' then 1 ELSE 0 end) as churned_customers,
+COUNT(distinct s.customer_id) as total_distinct_customers,
+round((sum(CASE WHEN p.plan_name = 'churn' then 1 ELSE 0 end)/COUNT(distinct s.customer_id))*100,1) as percentage_churned
+FROM foodie_fi.subscriptions s
+LEFT JOIN foodie_fi.plans p ON s.plan_id = p.plan_id;
+
+# 5. How many customers have churned straight after their initial free trial - what percentage is this rounded to the nearest whole number?
+WITH cte as
+(
+SELECT s.customer_id, p.plan_name, rank() OVER (PARTITION BY s.customer_id ORDER BY s.start_date) as row_num
+FROM foodie_fi.subscriptions s
+LEFT JOIN foodie_fi.plans p ON s.plan_id = p.plan_id
+)
+SELECT COUNT(CASE WHEN plan_name = 'churn' AND row_num = 2 THEN 1 END) AS churn_count,
+ ROUND((COUNT(CASE WHEN plan_name = 'churn' AND row_num = 2 THEN 1 END)/COUNT(DISTINCT customer_id))*100 ) AS churn_percent
+from cte
+ORDER BY customer_id;
+
+# 6. What is the number and percentage of customer plans after their initial free trial?
+With cte AS
+(
+SELECT s.customer_id, p.plan_id, p.plan_name, rank() OVER (PARTITION BY s.customer_id ORDER BY s.start_date) as row_num
+FROM foodie_fi.subscriptions s
+LEFT JOIN foodie_fi.plans p ON s.plan_id = p.plan_id
+)
+
+SELECT plan_id, plan_name, count(customer_id) AS Num_Converted, ROUND((count(plan_name)/(SELECT count(DISTINCT customer_id) FROM foodie_fi.subscriptions )*100),1) AS percent_converted
+FROM cte
+WhERE row_num = 2
+GROUP BY plan_id, plan_name
+ORDER BY plan_id;
+
+# 7. What is the customer count and percentage breakdown of all 5 plan_name values at 2020-12-31?
+With ranking as
+(
+SELECT *, RANK() OVER(PARTITION BY customer_id ORDER BY start_date DESC) as rank_num 
+FROM foodie_fi.subscriptions 
+where start_date <= '2020-12-31'
+)
+SELECT plans.plan_name, 
+count(plans.plan_id) AS customer_count,
+ROUND(COUNT(plans.plan_id)/(SELECT COUNT(customer_id) FROM ranking WHERE rank_num = 1)*100,1) as percent
+FROM ranking
+JOIN plans
+ON plans.plan_id = ranking.plan_id
+WHERE rank_num = 1
+GROUP BY plan_name
+ORDER BY customer_count DESC;
+
+;
+# 8. How many customers have upgraded to an annual plan in 2020?
+SELECT COUNT(DISTINCT s.customer_id) AS cust_count 
+FROM foodie_fi.subscriptions s
+WHERE plan_id = 3
+AND YEAR(start_date) = '2020';
+
+# 9. How many days on average does it take for a customer to an annual plan from the day they join Foodie-Fi?
+
+SELECT round(avg(datediff(s2.start_date, s1.start_date)))
+FROM foodie_fi.subscriptions s1
+LEFT JOIN foodie_fi.subscriptions s2
+ON s1.customer_id = s2.customer_id
+AND s1.plan_id + 3 = s2.plan_id
+WHERE s2.plan_id = 3;
+
+# 10. Can you further breakdown this average value into 30 day periods (i.e. 0-30 days, 31-60 days etc)
+
+# 11. How many customers downgraded from a pro monthly to a basic monthly plan in 2020?
+
+SELECT COUNT(DISTINCT s1.customer_id) AS cust_count
+FROM foodie_fi.subscriptions s1
+LEFT JOIN foodie_fi.subscriptions s2
+ON s1.customer_id = s2.customer_id
+AND s1.plan_id - 1 = s2.plan_id
+WHERE s2.plan_id = 1
+AND DATEDIFF(s2.start_date, s1.start_date) > 0
+AND YEAR(s2.start_date) = '2020'
